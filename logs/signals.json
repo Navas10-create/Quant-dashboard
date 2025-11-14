@@ -1,0 +1,9 @@
+[
+  {
+    "symbol": "NSE:NIFTY50-INDEX",
+    "side": "BUY",
+    "time": "2025-11-11T10:30:00Z",
+    "price": 21700.5,
+    "note": "test_signal"
+  }
+]

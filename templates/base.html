@@ -1,6 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- ===== TradingView safety shim - TEMPORARY ===== -->
+<script>
+  // Prevent TradingView.widget() from creating visible widgets.
+  // If TradingView script loads later, widget creation will call the stub instead.
+  (function(){
+    // Create a safe stub BEFORE any external scripts run
+    if (!window.__tv_shim_installed) {
+      window.__tv_shim_installed = true;
+
+      // Minimal stub for TradingView global object
+      window.TradingView = window.TradingView || {};
+      window.TradingView.widget = function(opts){
+        console.warn('Blocked TradingView.widget() call', opts);
+        return {
+          // expose no-op methods that some code might expect
+          onChartReady: function(cb){ if (typeof cb === 'function') cb(); },
+          remove: function(){ /* no-op */ }
+        };
+      };
+
+      // Also block the lightweight tv loader from replacing things
+      window.tvWidget = function(){ console.warn('tvWidget blocked'); return {}; };
+    }
+  })();
+</script>
+
+<!-- Hide any TradingView iframe / div overlays (redundant-safe) -->
+<style>
+  iframe[src*="tradingview"], iframe[src*="tv.js"], iframe[id*="tradingview"], 
+  div[id*="tradingview"], div[class*="tradingview"] {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
+    height:0 !important;
+    width:0 !important;
+  }
+</style>
+<!-- ===== end shim ===== -->
+
     <!-- Add blocking script to set theme before any content loads -->
     <script>
         (function() {

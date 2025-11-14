@@ -68,6 +68,19 @@ logger = get_logger(__name__)
 def create_app():
     # Initialize Flask application
     app = Flask(__name__)
+    
+    # --- OpenAlgo Charts & Signals extension ---
+    from charts_extension import socketio
+    from charts_extension.charts.routes import bp as charts_bp, fyers_socket
+
+    # register both chart blueprints
+    app.register_blueprint(charts_bp)
+    app.register_blueprint(fyers_socket)
+
+    # link the shared SocketIO instance to the Flask app
+    socketio.init_app(app)
+    # -------------------------------------------
+
 
     # Initialize SocketIO
     socketio.init_app(app)  # Link SocketIO to the Flask app

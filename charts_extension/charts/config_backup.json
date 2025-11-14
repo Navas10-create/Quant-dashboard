@@ -1,0 +1,6 @@
+{
+  "fyers_api_key": "YOUR_FYERS_API_KEY",
+  "fyers_access_token": "YOUR_FYERS_ACCESS_TOKEN",
+  "symbol_default": "NSE:NIFTY50-INDEX",
+  "poll_interval_sec": 10
+}

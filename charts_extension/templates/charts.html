@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  /* --- Loading Overlay for Chart --- */
+  #chartContainer.loading::after {
+    content: 'Loading chart...';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+</style>
+
+<div class="container-fluid" style="padding:20px;">
+  <!-- === Controls Bar === -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+
+    <!-- 1️⃣ Search Input -->
+    <input id="searchBox"
+           placeholder="Search symbol or type full Fyers symbol (e.g. NSE:NIFTY50-INDEX)"
+           list="symbolList"
+           class="input input-bordered w-72" />
+    <datalist id="symbolList"></datalist>
+
+    <!-- 2️⃣ Search Button -->
+    <button id="searchBtn" class="btn btn-primary">Search</button>
+
+    <!-- 3️⃣ Symbol Select -->
+    <select id="symbolSelect" class="select select-bordered w-64">
+      <option value="">-- Select symbol --</option>
+    </select>
+
+    <!-- 4️⃣ Interval Select -->
+    <select id="intervalSelect" class="select select-bordered">
+  <option value="1">1m</option>
+  <option value="5" selected>5m</option>
+  <option value="15">15m</option>
+  <option value="60">1h</option>
+  <option value="D">1D</option>
+</select>
+
+    <!-- 5️⃣ Load Chart Button -->
+    <button id="loadBtn" class="btn btn-success">Load Chart</button>
+
+  </div>
+
+  <!-- === Chart Container === -->
+  <div id="chartContainer"
+       style="height:620px;border:1px solid #444;border-radius:8px;position:relative;">
+  </div>
+
+  <!-- === Optional Toggles === -->
+  <div style="margin-top:10px;">
+    <label><input id="showSignals" type="checkbox" checked /> Show live signals</label>
+  </div>
+</div>
+
+
+<!-- === Chart Libraries & Scripts === -->
+
+<!-- 1️⃣ LightweightCharts -->
+<script src="{{ url_for('charts_ext.static', filename='js/lightweight-charts.standalone.production.js') }}"></script>
+
+<!-- 2️⃣ Socket.IO -->
+<script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+
+<!-- 3️⃣ Your Chart Engine -->
+<script src="{{ url_for('charts_ext.static', filename='js/charts.js') }}"></script>
+
+{% endblock %}
