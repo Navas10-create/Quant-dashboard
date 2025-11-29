@@ -163,7 +163,9 @@ window.LWCharts = {
                 throw new Error(`API error: ${response.status}`);
             }
 
-            const data = await response.json();
+            const responseData = await response.json();
+const data = responseData.data || responseData;
+
 
             if (!Array.isArray(data) || data.length === 0) {
                 console.warn('[LWCharts] No data received from API');
@@ -263,41 +265,78 @@ window.LWCharts = {
         const symbolSelect = document.getElementById('symbolSelect');
         const intervalSelect = document.getElementById('intervalSelect');
         const showSignals = document.getElementById('showSignals');
+// === Autocomplete Search Dropdown for Instruments ===
+const searchBox = document.getElementById("searchBox");
+const dropdown = document.getElementById("search-dropdown");
+let timer;
 
-        if (searchBtn) {
-            searchBtn.addEventListener('click', () => {
-                const symbol = document.getElementById('searchBox').value.trim();
-                if (symbol) {
-                    const interval = intervalSelect?.value || '5';
-                    const signals = showSignals?.checked || false;
-                    this.setCandles(symbol, interval, signals);
-                }
-            });
+if (searchBox) {
+    searchBox.addEventListener("input", () => {
+        clearTimeout(timer);
+        const query = searchBox.value.trim();
+        if (query.length < 2) { dropdown.innerHTML = ""; dropdown.style.display = "none"; return; }
+        timer = setTimeout(() => {
+            fetch(`/api/search?q=${encodeURIComponent(query)}`)
+                .then(res => res.json())
+                .then(results => {
+                    dropdown.innerHTML = "";
+                    results.slice(0, 25).forEach(inst => {
+                        const div = document.createElement("div");
+                        div.textContent = inst.symbol || inst.name || '';
+                        div.className = 'search-item';
+                        div.addEventListener('click', () => {
+                            searchBox.value = div.textContent;
+                            dropdown.innerHTML = "";
+                            dropdown.style.display = "none";
+                        });
+                        dropdown.appendChild(div);
+                    });
+                    dropdown.style.display = (dropdown.children.length > 0) ? 'block' : 'none';
+                })
+                .catch(err => {
+                    console.error('[LWCharts] Search error:', err);
+                    dropdown.innerHTML = "";
+                    dropdown.style.display = "none";
+                });
+        }, 300);
+    });
+}
+
+// Button handlers
+if (searchBtn) {
+    searchBtn.addEventListener('click', () => {
+        const symbol = document.getElementById('searchBox').value.trim();
+        if (symbol) {
+            const interval = intervalSelect?.value || '5';
+            const signals = showSignals?.checked || false;
+            this.setCandles(symbol, interval, signals);
         }
+    });
+}
 
-        if (loadBtn) {
-            loadBtn.addEventListener('click', () => {
-                const symbol = symbolSelect?.value;
-                if (symbol) {
-                    const interval = intervalSelect?.value || '5';
-                    const signals = showSignals?.checked || false;
-                    this.setCandles(symbol, interval, signals);
-                }
-            });
+if (loadBtn) {
+    loadBtn.addEventListener('click', () => {
+        const symbol = symbolSelect?.value;
+        if (symbol) {
+            const interval = intervalSelect?.value || '5';
+            const signals = showSignals?.checked || false;
+            this.setCandles(symbol, interval, signals);
         }
+    });
+}
 
-        // Auto-load on symbol change
-        if (symbolSelect) {
-            symbolSelect.addEventListener('change', (e) => {
-                if (e.target.value) {
-                    const interval = intervalSelect?.value || '5';
-                    const signals = showSignals?.checked || false;
-                    this.setCandles(e.target.value, interval, signals);
-                }
-            });
+// Auto-load on symbol change
+if (symbolSelect) {
+    symbolSelect.addEventListener('change', (e) => {
+        if (e.target.value) {
+            const interval = intervalSelect?.value || '5';
+            const signals = showSignals?.checked || false;
+            this.setCandles(e.target.value, interval, signals);
         }
+    });
+}
 
-        console.log('[LWCharts] ✓ Ready');
+console.log('[LWCharts] ✓ Ready');
     }
 };
 

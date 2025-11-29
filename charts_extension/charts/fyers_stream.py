@@ -1,6 +1,22 @@
-import json, websocket, os, time
+import json, os, time
+
+import logging
+logger = logging.getLogger(__name__)
+
+try:
+    import websocket
+except ImportError:
+    raise ImportError("websocket-client required: pip install websocket-client")
+
 from dotenv import load_dotenv
-from extensions import socketio
+def emit_update(data):
+    """Emit chart update through socketio"""
+    try:
+        from extensions import socketio
+        socketio.emit("chart_update", data)
+    except ImportError:
+        print("[Stream] SocketIO not available")
+
 
 load_dotenv()
 
@@ -13,13 +29,21 @@ SYMBOLS = [
     "NSE:BANKNIFTY-INDEX"
 ]
 
+def emit_update(data):
+    """Emit chart update - imported inside function to avoid circular dependency"""
+    try:
+        from extensions import socketio
+        socketio.emit("chart_update", data)
+    except ImportError:
+        logger.warning("SocketIO not available")
+
 def on_message(ws, message):
     try:
         data = json.loads(message)
-        socketio.emit("chart_update", data)
-        print("[TICK]", data)
+        emit_update(data)
     except Exception as e:
-        print("[ERROR]", e, message)
+        logger.error(f"Error occurred: {e}")
+
 
 def on_error(ws, error):
     print("[WebSocket Error]", error)
@@ -48,3 +72,17 @@ def run_stream():
         on_close=on_close
     )
     ws.run_forever()
+import threading
+
+def run_stream_threaded():
+    """Run WebSocket stream in background thread"""
+    thread = threading.Thread(target=run_stream, daemon=True)
+    thread.start()
+    return thread
+def on_message(ws, message):
+    try:
+        data = json.loads(message)
+        emit_update(data)  # Use new function
+        print("[TICK]", data)
+    except Exception as e:
+        print("[ERROR]", e, message)

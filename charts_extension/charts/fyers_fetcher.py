@@ -3,6 +3,25 @@ import json
 import time
 import threading
 import requests
+import logging
+
+# Set up a basic logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+# ADD THIS AT THE TOP (after other imports):
+
+try:
+    from fyers_apiv3 import fyersModel
+except ImportError:
+    logger.warning("fyers_apiv3 not installed")
+    fyersModel = None
+
+try:
+    import requests
+except ImportError:
+    raise ImportError("requests library required: pip install requests")
+
 from datetime import datetime, timedelta
 
 
@@ -106,16 +125,17 @@ def fetch_ohlc(symbol, interval="5minute", range_days=None):
 
     # Convert Fyers candles into frontend-friendly format
     formatted = [
-        {
-            "time": int(c[0]),   # epoch timestamp
-            "open": float(c[1]),
-            "high": float(c[2]),
-            "low": float(c[3]),
-            "close": float(c[4]),
-            "volume": float(c[5]),
-        }
-        for c in candles
-    ]
+    {
+        "time": int(c),
+        "open": float(c),
+        "high": float(c),
+        "low": float(c),
+        "close": float(c),
+        "volume": float(c),
+    }
+    for c in candles
+]
+
 
     return formatted
 

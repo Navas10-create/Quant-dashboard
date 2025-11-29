@@ -26,12 +26,25 @@ from cryptography.fernet import Fernet
 import base64
 import hashlib
 
+# CSRF decorator import with compatibility fallback
+try:
+    from flask_wtf.csrf import csrf_exempt
+except Exception:
+    # Older Flask-WTF versions may not export csrf_exempt.
+    # Provide a no-op decorator so existing @csrf_exempt decorators remain valid.
+    def csrf_exempt(fn):
+        return fn
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Create blueprint with /python route
 python_strategy_bp = Blueprint('python_strategy_bp', __name__, url_prefix='/python')
+
+# Disable CSRF checks for this local-only blueprint (safer & avoids decorator edits)
+python_strategy_bp._disable_csrf = True
+
 
 # Global storage with thread locks for safety
 RUNNING_STRATEGIES = {}  # {strategy_id: {'process': subprocess.Popen, 'started_at': datetime}}

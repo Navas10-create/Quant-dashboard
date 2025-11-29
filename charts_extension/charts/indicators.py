@@ -20,14 +20,19 @@ def attach_indicators(ohlc_list, emas=None, rsi_period=None):
     rsi_period: int or None
     returns: dict of arrays aligned with ohlc_list: {'ema_20': [...], 'rsi_14': [...]}
     """
-    df = pd.DataFrame(ohlc_list)
-    if df.empty:
+    try:
+        df = pd.DataFrame(ohlc_list)
+        if df.empty:
+            return {}
+        df['close'] = pd.to_numeric(df['close'], errors='coerce')
+        out = {}
+        if emas:
+            for p in emas:
+                out[f'ema_{p}'] = compute_ema(df['close'], p).bfill().tolist()
+        if rsi_period:
+            out[f'rsi_{rsi_period}'] = compute_rsi(df['close'], rsi_period).fillna(50).tolist()
+        return out
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Indicator calculation failed: {e}")
         return {}
-    df['close'] = pd.to_numeric(df['close'], errors='coerce')
-    out = {}
-    if emas:
-        for p in emas:
-            out[f'ema_{p}'] = compute_ema(df['close'], p).fillna(method='bfill').tolist()
-    if rsi_period:
-        out[f'rsi_{rsi_period}'] = compute_rsi(df['close'], rsi_period).fillna(50).tolist()
-    return out

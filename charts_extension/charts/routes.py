@@ -1,121 +1,512 @@
-# extensions/charts/routes.py
-import os, json
-from flask import Blueprint, render_template, jsonify, request, current_app
-from .fyers_fetcher import fetch_ohlc
-from .indicators import attach_indicators
-from .signal_store import read_signals
+#!/usr/bin/env python3
+
+
+
+"""
+OpenAlgo Charts Extension - API Routes
+File: charts_extension/charts/routes.py
+
+Provides REST API endpoints for chart data, symbol search,
+and trading signal retrieval with Fyers broker integration.
+"""
 
 import os
-bp = Blueprint(
-    "charts_ext",
-    __name__,
-    template_folder=os.path.join(os.path.dirname(__file__), "../templates"),
-    static_folder=os.path.join(os.path.dirname(__file__), "../static"),
-    static_url_path="/charts_static"
-)
+import json
+import sqlite3
+import logging
+import time
+from datetime import datetime, timedelta
+from flask import Blueprint, request, jsonify
 
-@bp.route('/charts')
-def charts_page():
-    # Use standalone template to avoid conflicts with base.html
-    return render_template('charts_standalone.html')
+print(">>> routes.py LOADED")
 
-@bp.route("/signals")
-def signals_page():
-    return render_template("signals.html")
 
-@bp.route("/api/ohlc/<path:symbol>")
-def api_ohlc(symbol):
-    interval = request.args.get("interval", "5minute")
-    duration = int(request.args.get("duration", "240"))
-    data = fetch_ohlc(symbol, interval=interval, duration_minutes=duration)
-    return jsonify(data)
+bp = Blueprint('charts', __name__)
+logger = logging.getLogger(__name__)
 
-@bp.route("/api/indicators/<path:symbol>")
-def api_indicators(symbol):
-    interval = request.args.get("interval", "5minute")
-    duration = int(request.args.get("duration", "240"))
-    emas = request.args.get("ema", "")  # comma separated
-    rsi = request.args.get("rsi", None)
-    emas_list = [int(x) for x in emas.split(",") if x.strip().isdigit()] if emas else []
-    rsi_period = int(rsi) if rsi and rsi.isdigit() else None
-    ohlc = fetch_ohlc(symbol, interval=interval, duration_minutes=duration)
-    indicators = attach_indicators(ohlc, emas=emas_list, rsi_period=rsi_period)
-    return jsonify({"ohlc": ohlc, "indicators": indicators})
-
-@bp.route("/api/signals", methods=["GET"])
-def api_signals():
-    """
-    Serve live signals from logs/signals.json with optional ?symbol= filtering.
-    """
-    symbol = request.args.get("symbol", None)
+def get_db_connection(db_path):
+    """Establish database connection with error handling."""
     try:
-        signals = read_signals()
-    except FileNotFoundError:
-        return jsonify({"status": "error", "message": "signals.json not found"}), 404
-    except json.JSONDecodeError:
-        return jsonify({"status": "error", "message": "Malformed signals.json"}), 500
+        if not os.path.exists(db_path):
+            logger.warning(f'Database not found: {db_path}')
+            return None
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        logger.error(f'Database connection error: {str(e)}')
+        return None
 
-    if symbol:
-        signals = [s for s in signals if s.get("symbol", "").upper() == symbol.upper()]
-
-    return jsonify({"status": "success", "data": signals})
-
-
-@bp.route("/api/search")
-def api_search():
-    q = request.args.get('q', '').strip().upper()
-    idx_path = os.path.join(current_app.root_path, "..", "config", "instrument_index.json")
-    results = []
+@bp.route('/ohlc', methods=['GET'])
+def get_ohlc():
+    """Fetch OHLC candlestick data from Fyers broker."""
     try:
-        if os.path.exists(idx_path):
-            with open(idx_path,'r', encoding='utf-8') as f:
-                index = json.load(f)
-            for entry in index:
-                if q == "" or q in entry.get('name','').upper() or q in entry.get('symbol','').upper():
-                    results.append(entry)
-    except Exception:
-        pass
-    if not results and q:
-        results = [{"name": q, "symbol": q}]
-    return jsonify(results)
-# =====================================================
-# API endpoint: Fetch OHLC candles from Fyers
-# =====================================================
-from flask import request, jsonify
-from .fyers_fetcher import fetch_ohlc
+        symbol = request.args.get('symbol', '').strip()
+        interval = request.args.get('interval', '5').strip()
+        limit = min(int(request.args.get('limit', '200')), 500)
+        
+        if not symbol:
+            return jsonify({'error': 'Symbol parameter required'}), 400
+        
+        if limit < 1:
+            return jsonify({'error': 'Limit must be greater than 0'}), 400
+        
+    
+        
+        # Try database first (if table exists)
+        logger.info(f'get_candles_from_db called with symbol={symbol}, interval={interval}, limit={limit}')
 
-@bp.route("/api/fyers_ohlc", methods=["GET"])
-def fyers_ohlc():
-    """
-    Endpoint to fetch OHLC data for a given symbol and interval.
-    Example: /api/fyers_ohlc?symbol=NSE:NIFTY50-INDEX&interval=5minute
-    """
-    symbol = request.args.get("symbol", "NSE:NIFTY50-INDEX")
-    interval = request.args.get("interval", "5minute")
+        data = get_candles_from_db(symbol, interval, limit)
+        if data and len(data) > 0:
+            logger.info(f'[OHLC] Got {len(data)} candles from database for {symbol}')
+            return jsonify({'status': 'success', 'data': data}), 200
+        
+        # Fallback to Fyers API
+        logger.info(f'[OHLC] Database failed, using Fyers API for {symbol}')
+        data = get_candles_from_fyers(symbol, interval, limit)
+        if data and len(data) > 0:
+            logger.info(f'[OHLC] Got {len(data)} candles from Fyers for {symbol}')
+            return jsonify({'status': 'success', 'data': data}), 200
+        
+        logger.warning(f'[OHLC] No data available for {symbol}')
+        # Return consistent envelope so frontend does not crash
+        return jsonify({'status': 'success', 'data': []}), 200
 
-    try:
-        candles = fetch_ohlc(symbol, interval)
-        return jsonify({"status": "success", "data": candles})
+    
+    except ValueError as e:
+        logger.error(f'OHLC parameter error: {str(e)}')
+        return jsonify({'error': 'Invalid parameter format'}), 400
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        logger.error(f'OHLC endpoint error: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+    
+@bp.route('/fyers-data', methods=['POST'])
+def fyers_data_route():
+    """
+    Endpoint used by the frontend fallback to fetch OHLC from Fyers.
+    Accepts JSON: { "symbol": "...", "interval": "5", "limit": 200 }
+    Returns: { "status": "success", "data": [...] }
+    """
+    try:
+        # DEBUG: inspect incoming request
+        logger.info("[DEBUG] /fyers-data headers: %s", dict(request.headers))
 
-from flask_socketio import SocketIO, emit
-from flask import Blueprint
-import threading, json
-from charts_extension.charts.fyers_stream import run_stream
+        raw_body = request.get_data(as_text=True)
+        logger.info("[DEBUG] /fyers-data raw body: %s", raw_body)
+
+        payload = request.get_json(silent=True) or {}
+        logger.info("[DEBUG] /fyers-data parsed json: %s", payload)
+
+        # ---- Robust symbol/interval/limit parsing ----
+        symbol = (
+            payload.get("symbol")
+            or request.form.get("symbol")
+            or request.args.get("symbol")
+            or ""
+        ).strip()
+
+        interval = str(
+            payload.get("interval")
+            or request.form.get("interval")
+            or request.args.get("interval")
+            or "5"
+        ).strip()
+
+        limit_raw = (
+            payload.get("limit")
+            or request.form.get("limit")
+            or request.args.get("limit")
+            or 200
+        )
+
+        try:
+            limit = max(1, min(int(limit_raw), 500))
+        except:
+            return jsonify({
+                "status": "error",
+                "message": "Invalid limit value",
+                "data": []
+            }), 400
+
+        if not symbol:
+            return jsonify({
+                "status": "error",
+                "message": "symbol required",
+                "data": []
+            }), 400
+
+        # ---- Call Fyers ----
+        data = get_candles_from_fyers(symbol, interval, limit)
+
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "No data from Fyers",
+                "data": []
+            }), 404
+
+        return jsonify({
+            "status": "success",
+            "data": data
+        }), 200
+
+    except Exception as e:
+        logger.exception("Error in /fyers-data")
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "data": []
+        }), 500
 
 
-socketio = SocketIO(cors_allowed_origins="*")
-fyers_socket = Blueprint('fyers_socket', __name__)
 
-def start_fyers_stream():
-    # use your existing fyers_stream.py instead of old SDK
-    run_stream()
+def get_candles_from_db(symbol, interval, limit):
+    """Query master_contract database for OHLC data."""
+    try:
+        db_path = os.path.join('db', 'master_contract.db')
+        conn = get_db_connection(db_path)
+        if not conn:
+            return []
+        
+        cur = conn.cursor()
+        query = """
+            SELECT
+                timestamp as time,
+                CAST(open as FLOAT) as open,
+                CAST(high as FLOAT) as high,
+                CAST(low as FLOAT) as low,
+                CAST(close as FLOAT) as close,
+                volume
+            FROM ohlc_data
+            WHERE symbol = ? AND interval = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """
+        logger.debug(f'Querying DB at {db_path} with symbol={symbol} interval={interval} limit={limit}')
+
+        cur.execute(query, (symbol, interval, limit))
+        rows = cur.fetchall()
+        conn.close()
+        
+        if not rows:
+            return []
+        
+        data = [dict(row) for row in rows]
+        data.reverse()
+        return data
+    
+    except Exception as e:
+        logger.debug(f'Database query error (expected if no ohlc_data table): {str(e)}')
+        return []
+
+    logger.info(f'get_candles_from_fyers called for symbol={symbol} interval={interval} limit={limit}')
+
+def get_candles_from_fyers(symbol, interval, limit):
+    """Fetch OHLC data from Fyers broker API."""
+    try:
+        # Ensure requests is available
+        try:
+            import requests
+        except ImportError:
+            logger.error('requests library not installed')
+            return []
+        
+        # Get token from environment
+        token = os.getenv('FYERS_ACCESS_TOKEN')
+        if not token or ':' not in token:
+            logger.warning('FYERS_ACCESS_TOKEN not configured properly')
+            return []
+        
+        # Parse token
+        try:
+            client_id, jwt_token = token.split(':', 1)
+        except:
+            logger.error('Invalid FYERS_ACCESS_TOKEN format (should be client_id:jwt_token)')
+            return []
+        
+        # Fyers API endpoint for historical data
+        url = "https://api.fyers.in/api/v3/history"
 
 
-@fyers_socket.route("/start_stream")
-def start_stream():
-    threading.Thread(target=start_fyers_stream).start()
-    return {"status": "Stream started"}
+
+        
+        # Map interval to Fyers resolution format
+        interval_map = {
+            '1': 1,
+            '5': 5,
+            '15': 15,
+            '30': 30,
+            '60': 60,
+            '240': 240,
+            '1D': 1440,
+            'D': 1440,
+            'W': 10080,
+            'M': 43200
+        }
+        
+        resolution = interval_map.get(str(interval).upper(), 5)
+        
+        # Calculate date range
+        end_time = int(datetime.now().timestamp())
+        start_time = end_time - (limit * resolution * 60)
+        
+        # Prepare request
+        headers = {
+    'Authorization': f'{client_id}:{jwt_token}',  # Direct client_id:jwt format
+    'Content-Type': 'application/json'
+}
+
+        
+        payload = {
+    "symbol": symbol,
+    "resolution": str(interval),
+    "date_format": 0,
+    "range_from": int(time.time()) - (limit * interval * 60),
+    "range_to": int(time.time()),
+    "cont_flag": "1"
+}
+
+
+        logger.debug(f'Fyers request URL: {url}')
+        logger.debug(f'Fyers headers(preview): {headers}')
+        logger.debug(f'Fyers payload: {payload}')
+
+        
+        # Make request
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            logger.warning(f'Fyers API returned {response.status_code}: {response.text}')
+            return []
+        
+        fyers_data = response.json()
+        
+        # Handle Fyers response
+        if 'candles' not in fyers_data or not fyers_data['candles']:
+            logger.warning(f'No candles in Fyers response: {fyers_data}')
+            return []
+        
+        candles = fyers_data.get('candles', [])
+        data = []
+        
+        for candle in candles[:limit]:
+            if len(candle) >= 5:
+                data.append({
+            'time': int(candle[0]),
+            'open': float(candle[1]),
+            'high': float(candle[2]),
+            'low': float(candle[3]),
+            'close': float(candle[4]),
+            'volume': int(candle[5]) if len(candle) > 5 else 0
+        })
+
+        
+        logger.info(f'Successfully fetched {len(data)} candles from Fyers for {symbol}')
+        return data
+    
+    except requests.exceptions.RequestException as e:
+        logger.error(f'Fyers API request error: {str(e)}')
+        return []
+    except Exception as e:
+        logger.error(f'Fyers API error: {str(e)}')
+        return []
+
+@bp.route('/search', methods=['GET'])
+def search_symbols():
+    """Search for trading symbols by name or symbol code."""
+    try:
+        query = request.args.get('q', '').upper().strip()
+        
+        if not query or len(query) < 1:
+            return jsonify([]), 200
+        
+        results = []
+        index_path = os.path.join('config', 'instrument_index.json')
+        
+        if os.path.exists(index_path):
+            try:
+                with open(index_path, 'r', encoding='utf-8') as f:
+                    instruments = json.load(f)
+                    
+                for inst in instruments:
+                    symbol = inst.get('symbol', '').upper()
+                    name = inst.get('name', '').upper()
+                    
+                    if query in symbol or query in name:
+                        results.append({
+                            'symbol': inst.get('symbol'),
+                            'name': inst.get('name'),
+                            'type': inst.get('type', 'EQUITY')
+                        })
+                    
+                    if len(results) >= 25:
+                        break
+            
+            except json.JSONDecodeError as e:
+                logger.error(f'Invalid JSON in instrument index: {str(e)}')
+        
+        # Fallback to database
+        if len(results) == 0:
+            results = search_symbols_from_db(query)
+        
+        return jsonify(results), 200
+    
+    except Exception as e:
+        logger.error(f'Search endpoint error: {str(e)}')
+        return jsonify([]), 500
+
+def search_symbols_from_db(query):
+    """Search symbols in master_contract database as fallback."""
+    try:
+        db_path = os.path.join('db', 'master_contract.db')
+        conn = get_db_connection(db_path)
+        
+        if not conn:
+            return []
+        
+        cur = conn.cursor()
+        search_query = f"%{query}%"
+        
+        sql = """
+            SELECT DISTINCT symbol, name, type
+            FROM master_contract
+            WHERE symbol LIKE ? OR name LIKE ?
+            LIMIT 25
+        """
+        
+        cur.execute(sql, (search_query, search_query))
+        rows = cur.fetchall()
+        conn.close()
+        
+        results = []
+        for row in rows:
+            results.append({
+                'symbol': row['symbol'],
+                'name': row['name'],
+                'type': row.get('type', 'EQUITY')
+            })
+        
+        return results
+    
+    except Exception as e:
+        logger.error(f'Database search error: {str(e)}')
+        return []
+
+@bp.route('/signals', methods=['GET'])
+def get_signals():
+    """Retrieve trading signals from strategy output."""
+    try:
+        signals_path = os.path.join('logs', 'signals.json')
+        
+        if not os.path.exists(signals_path):
+            return jsonify({
+                'status': 'success',
+                'signals': [],
+                'message': 'No signals file found'
+            }), 200
+        
+        with open(signals_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        signals = data if isinstance(data, list) else data.get('signals', [])
+        
+        # Validate signals
+        if not isinstance(signals, list):
+            signals = []
+        
+        max_signals = 100
+        result_signals = signals[-max_signals:] if len(signals) > max_signals else signals
+        
+        return jsonify({
+            'status': 'success',
+            'signals': result_signals,
+            'count': len(result_signals)
+        }), 200
+    
+    except json.JSONDecodeError as e:
+        logger.error(f'Invalid JSON in signals file: {str(e)}')
+        return jsonify({
+            'status': 'error',
+            'signals': [],
+            'message': 'Signals file corrupted'
+        }), 500
+    except Exception as e:
+        logger.error(f'Signals endpoint error: {str(e)}')
+        return jsonify({
+            'status': 'error',
+            'signals': [],
+            'message': str(e)
+        }), 500
+
+@bp.route('/instruments', methods=['GET'])
+def get_instruments():
+    """Get complete list of available trading instruments."""
+    try:
+        index_path = os.path.join('config', 'instrument_index.json')
+        
+        if not os.path.exists(index_path):
+            return jsonify({'error': 'Instruments not indexed yet'}), 404
+        
+        with open(index_path, 'r', encoding='utf-8') as f:
+            instruments = json.load(f)
+        
+        return jsonify({
+            'status': 'success',
+            'count': len(instruments),
+            'instruments': instruments
+        }), 200
+    
+    except json.JSONDecodeError as e:
+        logger.error(f'Invalid JSON in instrument index: {str(e)}')
+        return jsonify({'error': 'Instrument index corrupted'}), 500
+    except Exception as e:
+        logger.error(f'Instruments endpoint error: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
+# WebSocket support (optional, requires socketio)
+try:
+    from extensions import socketio
+    
+    @socketio.on('connect')
+    def handle_connect():
+        """Handle WebSocket client connection."""
+        logger.info('[WebSocket] Client connected')
+        return True
+    
+    @socketio.on('disconnect')
+    def handle_disconnect(reason):
+        """Handle WebSocket client disconnection."""
+        logger.info(f'[WebSocket] Client disconnected ({reason})')
+    
+    @socketio.on('subscribe')
+    def handle_subscribe(data):
+        """Subscribe to live data for a symbol."""
+        try:
+            symbol = data.get('symbol')
+            interval = data.get('interval', 5)
+            
+            if not symbol:
+                return {'error': 'Symbol required'}
+            
+            logger.info(f'[WebSocket] Subscribed to {symbol} ({interval}m)')
+            return {'status': 'subscribed', 'symbol': symbol}
+        
+        except Exception as e:
+            logger.error(f'WebSocket subscribe error: {str(e)}')
+            return {'error': str(e)}
+    
+    @socketio.on('unsubscribe')
+    def handle_unsubscribe(data):
+        """Unsubscribe from live data."""
+        try:
+            symbol = data.get('symbol')
+            if symbol:
+                logger.info(f'[WebSocket] Unsubscribed from {symbol}')
+            return {'status': 'unsubscribed'}
+        
+        except Exception as e:
+            logger.error(f'WebSocket unsubscribe error: {str(e)}')
+            return {'error': str(e)}
+
+except ImportError:
+    logger.warning('[WebSocket] SocketIO not available - WebSocket features disabled')

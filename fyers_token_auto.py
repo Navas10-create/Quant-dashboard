@@ -130,17 +130,26 @@ def exchange_token(auth_code):
 
 
 def update_env_file(token):
-    # Ensure the token is APPID:JWT format
     app_id = os.getenv("BROKER_API_KEY") or os.getenv("FYERS_CLIENT_ID")
+
+    # Ensure correct FYERS format: APPID:JWT
     if app_id and not token.startswith(f"{app_id}:"):
         token = f"{app_id}:{token}"
 
-    # Write token into .env without quotes
-    try:
-        set_key(ENV_PATH, "FYERS_ACCESS_TOKEN", token)
-        print("FYERS_ACCESS_TOKEN updated in .env (no quotes).")
-    except Exception as e:
-        print(" Failed to update .env:", e)
+    # Manually write into .env without quotes
+    lines = []
+    if os.path.exists(ENV_PATH):
+        with open(ENV_PATH, "r") as f:
+            for line in f:
+                if not line.startswith("FYERS_ACCESS_TOKEN"):
+                    lines.append(line)
+
+    lines.append(f"FYERS_ACCESS_TOKEN={token}\n")
+
+    with open(ENV_PATH, "w") as f:
+        f.writelines(lines)
+
+    print("✔ FYERS_ACCESS_TOKEN saved to .env without quotes.")
 
 
 # ============================================================

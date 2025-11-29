@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Chart — {{ symbol }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='charting/css/charting.css') }}">
+  <style>body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:12px}</style>
+</head>
+<body>
+  <div class="cv-header">
+    <h3>Chart: {{ symbol }}</h3>
+    <div class="cv-controls">
+      <select id="tfSelect">
+        <option value="1">1m</option>
+        <option value="3">3m</option>
+        <option value="5">5m</option>
+        <option value="15">15m</option>
+        <option value="60">1h</option>
+        <option value="D">1D</option>
+      </select>
+      <button id="btnSMA">SMA</button>
+      <button id="btnEMA">EMA</button>
+      <button id="btnRSI">RSI</button>
+      <button id="btnTrend">Trendline</button>
+      <button id="btnFibs">Fibs</button>
+    </div>
+  </div>
+
+  <div id="chart-container" style="position:relative;">
+    <div id="chart" style="width:100%; height:600px;"></div>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <script src="{{ url_for('static', filename='charting/js/lightweight-charts.standalone.production.js') }}"></script>
+  <script src="{{ url_for('static', filename='charting/js/indicators.js') }}"></script>
+  <script src="{{ url_for('static', filename='charting/js/drawing_tools.js') }}"></script>
+  <script src="{{ url_for('static', filename='charting/js/chart_core.js') }}"></script>
+
+  <script>
+    // bootstrap the chart_core with symbol from server
+    window.CHART_CONFIG = { symbol: "{{ symbol }}" };
+    document.addEventListener('DOMContentLoaded', () => {
+      ChartCore.init(window.CHART_CONFIG);
+    });
+  </script>
+</body>
+</html>

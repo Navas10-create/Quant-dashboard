@@ -1,6 +1,7 @@
 # Load and check environment variables before anything else
 from utils.env_check import load_and_check_env_variables  # Import the environment check function
 load_and_check_env_variables()
+from charting.blueprint import chart_bp
 
 from flask import Flask, render_template, session
 from flask_wtf.csrf import CSRFProtect  # Import CSRF protection
@@ -38,6 +39,7 @@ from blueprints.master_contract_status import master_contract_status_bp  # Impor
 from blueprints.websocket_example import websocket_bp  # Import the websocket example blueprint
 from blueprints.pnltracker import pnltracker_bp  # Import the pnl tracker blueprint
 from blueprints.python_strategy import python_strategy_bp  # Import the python strategy blueprint
+
 from blueprints.telegram import telegram_bp  # Import the telegram blueprint
 from blueprints.security import security_bp  # Import the security blueprint
 from blueprints.sandbox import sandbox_bp  # Import the sandbox blueprint
@@ -70,20 +72,22 @@ def create_app():
     app = Flask(__name__)
     
     # --- OpenAlgo Charts & Signals extension ---
-    from charts_extension import socketio
-    from charts_extension.charts.routes import bp as charts_bp, fyers_socket
+    from extensions import socketio
+    from charts_extension.charts.routes import bp as charts_bp
 
     # register both chart blueprints
-    app.register_blueprint(charts_bp)
-    app.register_blueprint(fyers_socket)
+    app.register_blueprint(charts_bp, url_prefix="/api")
 
     # link the shared SocketIO instance to the Flask app
     socketio.init_app(app)
     # -------------------------------------------
+  
+# -----------------------------------------------------
 
+    @app.route('/charts')
+    def charts_page():
+        return render_template('charts.html')
 
-    # Initialize SocketIO
-    socketio.init_app(app)  # Link SocketIO to the Flask app
 
     # Initialize CSRF protection
     csrf = CSRFProtect(app)
@@ -157,6 +161,15 @@ def create_app():
     else:
         app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit if empty
 
+    # ---------------- Charting Blueprint ----------------
+    try:
+        csrf.exempt(chart_bp)
+    except Exception:
+        pass
+
+    app.register_blueprint(chart_bp)
+    # -----------------------------------------------------
+
     # Register RESTx API blueprint first
     app.register_blueprint(api_v1_bp)
     
@@ -190,11 +203,13 @@ def create_app():
     app.register_blueprint(master_contract_status_bp)
     app.register_blueprint(websocket_bp)  # Register WebSocket example blueprint
     app.register_blueprint(pnltracker_bp)  # Register PnL tracker blueprint
+    csrf.exempt(python_strategy_bp)
     app.register_blueprint(python_strategy_bp)  # Register Python strategy blueprint
     app.register_blueprint(telegram_bp)  # Register Telegram blueprint
     app.register_blueprint(security_bp)  # Register Security blueprint
     app.register_blueprint(sandbox_bp)  # Register Sandbox blueprint
 
+    
 
     # Exempt webhook endpoints from CSRF protection after app initialization
     with app.app_context():
@@ -308,6 +323,14 @@ def create_app():
     @app.context_processor
     def inject_version():
         return dict(version=get_version())
+    
+    
+
+         # DEBUG: Print route map for API
+        print(">>> Dumping API routes from app.url_map")
+        for rule in app.url_map.iter_rules():
+            if str(rule).startswith("/api"):
+                print(f"[ROUTE-MAP] {rule}  -->  {rule.endpoint}")
 
     return app
 

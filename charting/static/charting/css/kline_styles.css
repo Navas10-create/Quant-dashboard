@@ -1,0 +1,4 @@
+/* minimal styling for toolbar and chart */
+.toolbar { background:#fff; border-bottom:1px solid #eee; padding:8px; display:flex; align-items:center; }
+#chart-root { width:100%; height:calc(100vh - 56px); }
+#dataSourceBadge { font-weight:600; color:#0a84ff; margin-left:6px; }

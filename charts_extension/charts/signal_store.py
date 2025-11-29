@@ -1,5 +1,8 @@
 # extensions/charts/signal_store.py
-import json, os, tempfile, time
+import logging
+logger = logging.getLogger(__name__)
+
+import json, os, tempfile
 from typing import Dict, Any
 
 SIGNAL_PATH = "logs/signals.json"
@@ -11,8 +14,13 @@ def read_signals():
     try:
         with open(SIGNAL_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Failed to read signals: {e}")
         return []
+    except Exception as e:
+        logger.error(f"Unexpected error reading signals: {e}")
+        return []
+
 
 def write_signals_atomic(signals_list):
     # atomically write entire list
